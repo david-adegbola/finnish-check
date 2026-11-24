@@ -78,6 +78,9 @@ def evaluate(rows, baseline, predicted):
         "classifier_collapsed": scores(gold_collapsed, [collapse(predicted[r["id"]]) for r in kept], COLLAPSED),
         "baseline_collapsed_real": scores([collapse(r["label"]) for r in kept if not r.get("invented")],
                                           [baseline[r["id"]] for r in kept if not r.get("invented")], COLLAPSED),
+        "classifier_collapsed_real": scores([collapse(r["label"]) for r in kept if not r.get("invented")],
+                                            [collapse(predicted[r["id"]]) for r in kept if not r.get("invented")],
+                                            COLLAPSED),
     }
 
 
@@ -107,8 +110,19 @@ def report(summary, rows, baseline, results, mode, model):
               f"Preferred and not_needed count as not_required; {summary['excluded_unclear']} ads labelled unclear are left out.", ""]
     lines += table(summary["baseline_collapsed"], "baseline_v1 (JobDesk's keyword rule), all ads")
     lines += table(summary["baseline_collapsed_real"], "baseline_v1, real ads only")
+    lines += table(summary["classifier_collapsed_real"], f"Classifier ({mode}), real ads only")
     lines += table(summary["classifier_collapsed"], f"Classifier ({mode}), all ads")
     lines += ["## Four levels (classifier only)", ""] + table(summary["four_levels"], f"Classifier ({mode})")
+    rejected = [r["id"] for r in rows if results[r["id"]].get("rejected_evidence")]
+    lines += ["## Quote check", "",
+              f"Answers whose quote was not found in the ad (turned into \"unclear\"): **{len(rejected)}**"
+              + (f" ({', '.join(rejected)})" if rejected else "") + ".", ""]
+    corrected = [r for r in rows if r.get("corrected_after_llm_run")]
+    if corrected:
+        lines += ["## Labels corrected after an LLM run", "",
+                  "Changing a label after seeing the model's answer can flatter the results, so every such change is "
+                  "listed here with its reason.", ""]
+        lines += [f"- **{r['id']}** → {r['label']}: {r['note']}" for r in corrected] + [""]
     lines += ["## Disagreements", ""]
     for r in rows:
         res = results[r["id"]]
@@ -151,7 +165,10 @@ def main():
     # A small summary for the /about page: just the headline numbers
     headline = {"date": date.today().isoformat(), "mode": mode, "ads": summary["ads"],
                 "real_ads": summary["real_ads"], "excluded_unclear": summary["excluded_unclear"]}
-    for key in ("baseline_collapsed", "baseline_collapsed_real", "classifier_collapsed", "four_levels"):
+    headline["corrected_labels"] = sum(1 for r in rows if r.get("corrected_after_llm_run"))
+    headline["quotes_rejected"] = sum(1 for res in results.values() if res.get("rejected_evidence"))
+    for key in ("baseline_collapsed", "baseline_collapsed_real", "classifier_collapsed", "classifier_collapsed_real",
+                "four_levels"):
         headline[key] = {"accuracy": summary[key]["accuracy"], "correct": summary[key]["correct"],
                          "total": summary[key]["total"]}
     (out / "summary.json").write_text(json.dumps(headline, indent=2), encoding="utf-8")

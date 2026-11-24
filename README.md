@@ -21,10 +21,8 @@ So they translate ads one by one, or skip Finnish ads entirely and miss ones the
 |---|---|---|
 | ![Input form with sample ads loaded](screenshots/input.png) | ![Ranked results with Finnish badges and quotes](screenshots/results.png) | ![About page with evaluation](screenshots/about.png) |
 
-The screenshots show **mock mode** (no API key), so the results are a labelled keyword guess, not the LLM. The
-guess gets some ads visibly wrong. For example, rank 3, *"Suomen kielen taitosi on erinomainen, … ovat eduksi"*,
-really requires Finnish, but the word "eduksi" fooled the guess into "an advantage". Telling these cases apart is
-exactly the job the LLM is for.
+The screenshots show **live results** (Claude Haiku 5.5 via OpenRouter) for the 10 sample ads. Without a key,
+the app runs in mock mode instead: a simple keyword guess, labelled "MOCK" on every result.
 
 ## How it works
 
@@ -55,14 +53,16 @@ looked for "good … Finnish". That rule is kept here unchanged as `baseline_v1`
 real ads.
 
 **Results on 38 hand-labelled ads** (30 real excerpts from Valtiolle and Kuntarekry, 8 invented to cover cases the
-real ads lacked). For the yes/no question "is Finnish required?", the 11 ads labelled "unclear" are left out:
+real ads lacked). For the yes/no question "is Finnish required?", the 10 ads labelled "unclear" are left out:
 
 | Classifier | Accuracy, real ads | Accuracy, all ads |
 |---|---|---|
-| `baseline_v1` (JobDesk's keyword rule) | **47%** (9 of 19) | 59% (16 of 27) |
-| LLM classifier | *not run yet: needs an API key* | *not run yet* |
+| `baseline_v1` (JobDesk's keyword rule) | 45% (9 of 20) | 57% (16 of 28) |
+| LLM classifier (Claude Haiku 5.5 via OpenRouter) | **95%** (19 of 20) | **96%** (27 of 28) |
 
-On real ads the keyword rule **found only 8 of the 18 ads that require Finnish**. A student relying on it would apply
+On all four levels (required / an advantage / not needed / unclear) the LLM was right on **35 of 38** (92%).
+
+On real ads the keyword rule **found only 8 of the 19 ads that require Finnish**. A student relying on it would apply
 to jobs they can't get. Its typical misses are ordinary sentences that are only slightly different from its patterns:
 
 | Real ad sentence | Why the regex misses it |
@@ -73,8 +73,25 @@ to jobs they can't get. Its typical misses are ordinary sentences that are only 
 | "Kielitaitovaatimuksena toisen kotimaisen kielen hyvä … ja toisen kotimaisen kielen tyydyttävä … taito." | "the national languages": Finnish isn't named at all |
 
 Covering every phrasing with more rules quickly becomes a maze. A language model reads the sentence the way a
-person does, and the quote check keeps it honest. Full report: [`eval/REPORT.md`](eval/REPORT.md). The LLM numbers
-will be added once the evaluation has been run with a key (`python -m core.evaluate`).
+person does, and the quote check keeps it honest. Full report: [`eval/REPORT.md`](eval/REPORT.md).
+
+**Where the LLM still goes wrong** (all three are real ads):
+
+| Ad sentence | Label | LLM said | What went wrong |
+|---|---|---|---|
+| "…poliisilaitos on kaksikielinen, joten hakijalle voidaan katsoa eduksi, että hän kykenee tulkitsemaan ruotsinkielisiä asiakirjoja." | unclear | an advantage | Only *Swedish* is an advantage; the model read it as Finnish (twice, in two similar ads) |
+| "Kielitaitovaatimuksena toisen kotimaisen kielen hyvä … ja toisen kotimaisen kielen tyydyttävä … taito." | required | unclear | "One national language well, the other satisfactorily" never names Finnish. The model got it right in the first run and wrong in the second. |
+
+**Honest notes on these numbers**
+- **The set is small and mostly my own labels.** A 95% on 20 real ads means one mistake; it shows the direction, not
+  a precise rate.
+- **Results vary between runs.** The first run scored 27 of 27 on the yes/no question, the second 27 of 28 (the
+  `real-24` case above). The numbers above are from the second run.
+- **One label was corrected after the first LLM run.** I had labelled `real-46` "unclear". The model said "required",
+  and on rereading, the ad does state the same national-languages requirement as `real-24`. I changed the label and
+  recorded it in the data (`corrected_after_llm_run`) and in the report. Changing labels after seeing the model's
+  answers can flatter it, so every such change is listed.
+- **Only Claude Haiku 5.5 (the cheapest model) was evaluated.** The app's default, Claude Opus 5.5, wasn't measured.
 
 ## Why not just paste the ads into ChatGPT?
 
@@ -97,8 +114,13 @@ flask --app app run              # http://127.0.0.1:5000
 
 - **Without an API key** the app runs in **mock mode**: a simple keyword guess, labelled "MOCK" everywhere, so you can
   try the app immediately. Click **Load sample ads**, then **Check the ads**.
-- **With an API key:** `cp .env.example .env`, put your key in `ANTHROPIC_API_KEY`, and restart. Optional:
-  `LLM_MODEL` (default `claude-opus-5-5`), `LLM_EFFORT` (default `low`), `LLM_MODE=mock` to force mock mode.
+- **With an API key:** `cp .env.example .env`, then set **one** of the two keys and restart:
+  - `ANTHROPIC_API_KEY` (Anthropic's API directly), or
+  - `OPENROUTER_API_KEY` (OpenRouter, which forwards requests to Claude).
+
+  Optional settings: `LLM_MODEL` (default `claude-opus-5-5`; Anthropic-style names are converted for OpenRouter, e.g.
+  `claude-haiku-5-5` → `anthropic/claude-haiku-5.5`), `LLM_EFFORT` (default `low`, Anthropic API only), and
+  `LLM_MODE=mock` to force mock mode.
 
 Tests and evaluation:
 
@@ -136,13 +158,15 @@ python -m core.evaluate     # writes eval/REPORT.md and eval/summary.json (mock 
 
 ## Privacy
 
-Nothing is stored: no database, no files, no logs of the ads. In mock mode nothing leaves the server. With an API
-key, the **ad text** is sent to the Claude API (Anthropic) to be classified. The student's skills and Finnish level
-are only used on the server, for ranking.
+Nothing is stored: no database, no files, no logs of the ads. In mock mode nothing leaves the server. With a key,
+the **ad text** is sent to Claude to be classified: either directly (Anthropic's API) or through OpenRouter. With
+OpenRouter, the request only allows providers that don't store or train on the data (`data_collection: "deny"`). The
+student's skills and Finnish level are only used on the server, for ranking.
 
 ## With more time
 
-- Run and publish the LLM evaluation, and grow the labelled set with a second labeller and more private-sector ads.
+- Grow the labelled set (a second labeller, more private-sector ads), evaluate the default model (Opus 5.5)
+  as well as Haiku, and report the average of several runs instead of one.
 - Let students paste a link instead of the text (respecting each site's robots.txt and terms).
 - Remember a student's skills between visits (with consent), and add Finnish and Swedish versions of the interface.
 - Apply for Työmarkkinatori's official job-ad API, rather than collecting ads by hand.

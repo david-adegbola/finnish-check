@@ -1,27 +1,33 @@
 {
   "date": "2026-11-24",
-  "mode": "mock",
+  "mode": "live",
   "ads": 38,
   "real_ads": 30,
-  "excluded_unclear": 11,
+  "excluded_unclear": 10,
+  "corrected_labels": 1,
   "baseline_collapsed": {
-    "accuracy": 0.5925925925925926,
+    "accuracy": 0.5714285714285714,
     "correct": 16,
-    "total": 27
+    "total": 28
   },
   "baseline_collapsed_real": {
-    "accuracy": 0.47368421052631576,
+    "accuracy": 0.45,
     "correct": 9,
-    "total": 19
+    "total": 20
   },
   "classifier_collapsed": {
-    "accuracy": 0.7777777777777778,
-    "correct": 21,
-    "total": 27
+    "accuracy": 0.9642857142857143,
+    "correct": 27,
+    "total": 28
+  },
+  "classifier_collapsed_real": {
+    "accuracy": 0.95,
+    "correct": 19,
+    "total": 20
   },
   "four_levels": {
-    "accuracy": 0.7631578947368421,
-    "correct": 29,
+    "accuracy": 0.9210526315789473,
+    "correct": 35,
     "total": 38
   }
 }

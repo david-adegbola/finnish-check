@@ -62,14 +62,24 @@ It defines the four levels with typical Finnish, English and Swedish wording, li
 Finnish doesn't by itself require Finnish; "hyvä suomen kielen taito … eduksi" is "preferred"), says the ad is data
 and not instructions (against prompt injection), and states the evidence rules that `check()` enforces.
 
-## `core/llm.py`: talking to the Claude API
+## `core/llm.py`: talking to Claude (directly or through OpenRouter)
 
-- **`settings_from_env()`**: reads `ANTHROPIC_API_KEY`, `LLM_MODEL`, `LLM_EFFORT` and `LLM_MODE`. `Settings.live` is
-  true only when a key is set and mock mode isn't forced. The key is excluded from `repr()`, so it can't be printed
-  by accident.
-- **`build_request(...)`**: the headers (`x-api-key`, `anthropic-version: 2026-10-21`) and the JSON body (model,
-  system prompt, one user message, `output_config` with the effort and the JSON schema). It is separate so a test can
-  check the request without a network. There is no `temperature`: this API version rejects it.
+- **`settings_from_env()`**: reads `ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY` (which one is set decides the
+  `provider`), `LLM_MODEL`, `LLM_EFFORT` and `LLM_MODE`. `Settings.live` is true only when a key is set and mock mode
+  isn't forced. The key is excluded from `repr()`, so it can't be printed by accident.
+- **`openrouter_model(name)`**: turns Anthropic's model names into OpenRouter's (`claude-haiku-5-5` →
+  `anthropic/claude-haiku-5.5`) with one regular expression; a name that already has a `/` is kept.
+- **`build_request(...)`**: returns the URL, headers and JSON body for the chosen provider.
+  - **Anthropic:** `x-api-key` and `anthropic-version: 2026-10-21` headers; `output_config` holds the effort and the
+    JSON schema.
+  - **OpenRouter:** an `Authorization: Bearer` header and OpenAI-style `messages`; `response_format` holds the JSON
+    schema; `provider: {"require_parameters": true, "data_collection": "deny"}` means only providers that support
+    the schema and don't store or train on the data may answer.
+
+  It is separate so tests can check both requests without a network. There is no `temperature`: the current Claude
+  models reject it.
+- **`answer_text(...)`**: the two services shape their replies differently (`content` blocks vs `choices`). This
+  function pulls out the JSON text, and treats a refusal or a cut-off answer as an error.
 - **`call_json(...)`**: POSTs with `urllib` from the standard library. It retries on rate limits (429), server
   errors (5xx) and network errors, waiting `retry-after` seconds or 1, 2… seconds. It treats a refusal or a cut-off
   answer as an error, takes the text block and parses it as JSON. Error messages never contain the ad or the key.
@@ -136,8 +146,10 @@ A model generalises over phrasing in three languages. The baseline stays in the 
 
 **3. How do you know it works?**
 `python -m core.evaluate` runs both classifiers on 38 hand-labelled ads and writes accuracy, a confusion matrix,
-precision/recall and every disagreement. The LLM numbers need an API key and haven't been run yet. The baseline
-numbers are measured: 47% on real ads.
+precision/recall and every disagreement. On the yes/no question, the old keyword rule was right on 45% of real ads
+and the LLM (Claude Haiku 5.5) on 95% (19 of 20). On all four levels the LLM got 35 of 38. The set is small and
+labelled by me, results vary a little between runs, and one label was corrected after the first run (it's listed in
+the report). So I present it as strong evidence of the direction, not as a precise rate.
 
 **4. What is mock mode, and why is its score not in the README?**
 It lets anyone run the app without a key: a keyword guess, labelled "MOCK" on every result. I wrote it after seeing
@@ -157,8 +169,9 @@ number of ads and their length and checks the CSV columns; and every problem bec
 valid ads are still processed.
 
 **8. What data leaves the server?**
-In mock mode nothing. With a key, only the ad text goes to the Claude API. Skills and Finnish level are used for
-ranking on the server. Nothing is stored.
+In mock mode nothing. With a key, only the ad text goes to Claude: directly to Anthropic, or through OpenRouter, where
+the request only allows providers that don't collect the data. Skills and Finnish level are used for ranking on the
+server. Nothing is stored.
 
 **9. Why vendor code from JobDesk instead of installing it?**
 JobDesk isn't a published package, and this repo had to be self-contained and public. I copied only the five modules

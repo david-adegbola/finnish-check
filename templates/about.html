@@ -35,7 +35,9 @@
     <tr><td>Keyword rule, all ads</td>
       <td>{{ pct(summary.baseline_collapsed.accuracy) }} ({{ summary.baseline_collapsed.correct }} of {{ summary.baseline_collapsed.total }})</td></tr>
     {% if summary.mode == "live" %}
-    <tr><td>LLM classifier</td>
+    <tr><td>LLM classifier (Claude Haiku 5.5), real ads</td>
+      <td>{{ pct(summary.classifier_collapsed_real.accuracy) }} ({{ summary.classifier_collapsed_real.correct }} of {{ summary.classifier_collapsed_real.total }})</td></tr>
+    <tr><td>LLM classifier, all ads</td>
       <td>{{ pct(summary.classifier_collapsed.accuracy) }} ({{ summary.classifier_collapsed.correct }} of {{ summary.classifier_collapsed.total }})</td></tr>
     {% else %}
     <tr><td>LLM classifier</td><td>not run yet</td></tr>
@@ -45,6 +47,14 @@
 <p>On real ads the keyword rule found only {{ summary.baseline_collapsed_real.correct }} of
   {{ summary.baseline_collapsed_real.total }} correctly; most misses were ads that <em>do</em> require Finnish, so a
   student relying on it would apply to jobs they can't get.</p>
+{% if summary.mode == "live" %}
+<p>On all four levels the LLM was right on {{ summary.four_levels.correct }} of {{ summary.four_levels.total }}.
+  Its mistakes: it read “Swedish is an advantage” as “Finnish is an advantage” (two similar ads), and it was unsure
+  about “one national language well, the other satisfactorily”, which never names Finnish. Results vary a little
+  between runs (27 of 27 in the first run, 27 of 28 in the second, shown here).
+  {% if summary.corrected_labels %}One label was corrected after the first LLM run, because the model pointed to a
+  requirement I had missed; it is listed in the report.{% endif %}</p>
+{% endif %}
 {% if summary.mode != "live" %}
 <p class="hint">The LLM evaluation needs an API key and hasn't been run yet. The mock mode's keyword guess is not
   reported: it was written after seeing these ads, so its score would not be a fair result.</p>
@@ -59,8 +69,9 @@
 
 <h2>Limitations</h2>
 <ul>
-  <li>The labelled set is small and most real ads are public-sector ads that require Finnish; “an advantage” and
-    “not needed” cases are mostly invented examples.</li>
+  <li>The labelled set is small (38 ads, labelled by me) and most real ads are public-sector ads that require
+    Finnish; “an advantage” and “not needed” cases are mostly invented examples. One mistake moves the score by
+    about 5 percentage points.</li>
   <li>The quote check proves the sentence is in the ad, not that the level is right: a real sentence can still be
     misread. Always read the ad before applying.</li>
   <li>Skill matching is word matching: “data analysis” won't match “analysing data” in every form.</li>
