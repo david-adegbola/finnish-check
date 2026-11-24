@@ -1,6 +1,6 @@
 """The app's logic, kept separate from Flask so it can be tested and reused on its own.
 
-Vendored (copied) from the author's JobDesk project (core/ package, in sync with JobDesk commit 2970794,
+Vendored (copied) from the author's JobDesk project (core/ package,
 November 2026) and trimmed to what this app needs. JobDesk is the larger multi-user app this is part of:
     text.py      word helpers (tokens, Finnish-friendly word matching)          unchanged
     rank.py      ranked shortlist against a student's skills                     unchanged
