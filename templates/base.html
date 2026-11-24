@@ -13,11 +13,11 @@
   </header>
   {% if settings is defined and not settings.live %}
   <p class="mock-banner" role="note"><strong>Mock mode:</strong> no API key is set, so results come from a simple
-    keyword guess and are labelled “MOCK”. Set <code>ANTHROPIC_API_KEY</code> to use the AI classifier.</p>
+    keyword guess and are labelled “MOCK”. Set <code>ANTHROPIC_API_KEY</code> or <code>OPENROUTER_API_KEY</code> to use the AI classifier.</p>
   {% endif %}
   <main>{% block content %}{% endblock %}</main>
-  <footer>Ads and skills are not stored. {% if settings is defined and settings.live %}They are sent to the Claude API
-    to be classified.{% endif %}</footer>
+  <footer>Ads and skills are not stored. {% if settings is defined and settings.live %}The ad text is sent to Claude
+    ({{ 'via OpenRouter' if settings.provider == 'openrouter' else 'Anthropic API' }}) to be classified.{% endif %}</footer>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

@@ -1,18 +1,21 @@
-"""A small Claude API client using only the standard library (urllib), for JSON answers.
+"""A small client for Claude, using only the standard library (urllib), for JSON answers.
 
-Settings come from environment variables (or a .env file, loaded by app.py):
-    ANTHROPIC_API_KEY   if set, the app calls the API ("live" mode); if not, it runs in MOCK MODE
-    LLM_MODEL           default claude-opus-5-5
-    LLM_EFFORT          low | medium | high | xhigh | max (default low: this is simple classification)
-    LLM_MODE            set to "mock" to force mock mode even when a key is set
+It can reach Claude two ways:
+    ANTHROPIC_API_KEY    directly, through Anthropic's Messages API
+    OPENROUTER_API_KEY   through OpenRouter (openrouter.ai), which forwards the request to Claude
+If neither key is set, the app runs in MOCK MODE. Other settings (environment variables or .env):
+    LLM_MODEL    default claude-opus-5-5. For OpenRouter the name is converted automatically
+                 ("claude-haiku-5-5" -> "anthropic/claude-haiku-5.5"); a name with "/" is used as it is.
+    LLM_EFFORT   low | medium | high | xhigh | max (default low; Anthropic API only)
+    LLM_MODE     set to "mock" to force mock mode even when a key is set
 
 How one call works (call_json):
-  1. Build a Messages API request with the model, the system prompt, one user message and
-     output_config.format = a JSON schema. The API then guarantees the reply is valid JSON in that
-     shape ("structured outputs"). There is no temperature setting: API version 2026-10-21 rejects it.
-  2. POST it to https://api.anthropic.com/v1/messages with the x-api-key and anthropic-version headers.
+  1. Build the request with the model, the system prompt, one user message and a JSON schema. The service
+     then guarantees the reply is valid JSON in that shape ("structured outputs"). No temperature is sent:
+     the current Claude models reject it.
+  2. POST it, with the key in a header.
   3. Retry on 429 (rate limit), 5xx and network errors, up to max_retries times.
-  4. A "refusal" or a cut-off answer ("max_tokens") is an error, not an answer.
+  4. A refusal or a cut-off answer is an error, not an answer.
   5. Return the parsed JSON plus the model that answered.
 
 Error messages never include the prompt, the ad text or the key.
@@ -20,14 +23,16 @@ Error messages never include the prompt, the ad text or the key.
 
 import json
 import os
+import re
 import ssl
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 
-API_URL = "https://api.anthropic.com/v1/messages"
-API_VERSION = "2026-10-21"
+ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_VERSION = "2026-10-21"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "claude-opus-5-5"
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 RETRY_STATUSES = {408, 409, 429, 500, 502, 503, 504, 529}
@@ -40,6 +45,7 @@ class LLMError(Exception):
 
 @dataclass
 class Settings:
+    provider: str = "anthropic"                      # "anthropic" or "openrouter"
     model: str = DEFAULT_MODEL
     api_key: str = field(default="", repr=False)      # repr=False: never printed
     effort: str = "low"
@@ -54,19 +60,40 @@ class Settings:
 
 def settings_from_env(environ=None):
     env = os.environ if environ is None else environ
+    openrouter_key = (env.get("OPENROUTER_API_KEY") or "").strip()
     effort = (env.get("LLM_EFFORT") or "low").strip().lower()
     return Settings(
+        provider="openrouter" if openrouter_key else "anthropic",
         model=(env.get("LLM_MODEL") or DEFAULT_MODEL).strip(),
-        api_key=(env.get("ANTHROPIC_API_KEY") or "").strip(),
+        api_key=openrouter_key or (env.get("ANTHROPIC_API_KEY") or "").strip(),
         effort=effort if effort in EFFORTS else "low",
         force_mock=(env.get("LLM_MODE") or "").strip().lower() == "mock",
     )
 
 
+def openrouter_model(name):
+    """Anthropic's model names in OpenRouter's style: "claude-haiku-5-5" -> "anthropic/claude-haiku-5.5"."""
+    if "/" in name:
+        return name
+    return "anthropic/" + re.sub(r"-(\d+)-(\d+)$", r"-\1.\2", name)
+
+
 def build_request(settings, system, user, schema, max_tokens):
-    """(headers, body) for one Messages API call. Separate so tests can check it without a network."""
+    """(url, headers, body) for one call. Separate so tests can check it without a network."""
+    if settings.provider == "openrouter":
+        headers = {"content-type": "application/json", "authorization": f"Bearer {settings.api_key}"}
+        body = {
+            "model": openrouter_model(settings.model),
+            "max_tokens": max_tokens,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            "response_format": {"type": "json_schema",
+                                "json_schema": {"name": "answer", "strict": True, "schema": schema}},
+            # Only providers that support the JSON schema, and that don't store or train on the data
+            "provider": {"require_parameters": True, "data_collection": "deny"},
+        }
+        return OPENROUTER_URL, headers, body
     headers = {"content-type": "application/json", "x-api-key": settings.api_key,
-               "anthropic-version": API_VERSION}
+               "anthropic-version": ANTHROPIC_VERSION}
     body = {
         "model": settings.model,
         "max_tokens": max_tokens,
@@ -74,7 +101,19 @@ def build_request(settings, system, user, schema, max_tokens):
         "messages": [{"role": "user", "content": user}],
         "output_config": {"effort": settings.effort, "format": {"type": "json_schema", "schema": schema}},
     }
-    return headers, body
+    return ANTHROPIC_URL, headers, body
+
+
+def answer_text(settings, message):
+    """The JSON text of a successful reply, or LLMError. The two services shape replies differently."""
+    if settings.provider == "openrouter":
+        choice = (message.get("choices") or [{}])[0]
+        if choice.get("finish_reason") in ("length", "content_filter"):
+            raise LLMError(f"The model's answer is unusable ({choice['finish_reason']}).")
+        return (choice.get("message") or {}).get("content")
+    if message.get("stop_reason") in ("refusal", "max_tokens"):
+        raise LLMError(f"The model's answer is unusable ({message['stop_reason']}).")
+    return next((block["text"] for block in message.get("content", []) if block.get("type") == "text"), None)
 
 
 def _post(url, headers, data, timeout):
@@ -89,21 +128,22 @@ def _post(url, headers, data, timeout):
 
 def _error_type(raw):
     try:
-        return json.loads(raw)["error"]["type"]
-    except (ValueError, KeyError, TypeError):
+        error = json.loads(raw)["error"]
+        return str(error.get("type") or error.get("code") or "unknown_error")
+    except (ValueError, KeyError, TypeError, AttributeError):
         return "unknown_error"
 
 
-def call_json(system, user, schema, settings, max_tokens=2048, post=None, sleep=time.sleep):
+def call_json(system, user, schema, settings, max_tokens=4096, post=None, sleep=time.sleep):
     """Ask the model; return {"data": parsed JSON, "model": str}. post() is replaced in tests."""
     if not settings.live:
         raise LLMError("No API key is set, so the app is in mock mode.")
     post = post or _post
-    headers, body = build_request(settings, system, user, schema, max_tokens)
+    url, headers, body = build_request(settings, system, user, schema, max_tokens)
     data = json.dumps(body).encode("utf-8")
     for attempt in range(settings.max_retries + 1):
         try:
-            status, response_headers, raw = post(API_URL, headers, data, settings.timeout)
+            status, response_headers, raw = post(url, headers, data, settings.timeout)
         except (urllib.error.URLError, OSError):
             status, response_headers, raw = None, {}, b""
         if status == 200:
@@ -111,14 +151,12 @@ def call_json(system, user, schema, settings, max_tokens=2048, post=None, sleep=
         retryable = status is None or status in RETRY_STATUSES     # None = network error
         if not retryable or attempt == settings.max_retries:
             reason = "network error" if status is None else f"HTTP {status} {_error_type(raw)}"
-            raise LLMError(f"Claude API call failed: {reason}.")
+            raise LLMError(f"{settings.provider} API call failed: {reason}.")
         retry_after = {k.lower(): v for k, v in response_headers.items()}.get("retry-after")
         sleep(min(float(retry_after) if retry_after and retry_after.isdigit() else 2 ** attempt, 60))
 
     message = json.loads(raw)
-    if message.get("stop_reason") in ("refusal", "max_tokens"):
-        raise LLMError(f"The model's answer is unusable ({message['stop_reason']}).")
-    text = next((block["text"] for block in message.get("content", []) if block.get("type") == "text"), None)
+    text = answer_text(settings, message)
     try:
         return {"data": json.loads(text), "model": message.get("model", settings.model)}
     except (TypeError, ValueError) as error:

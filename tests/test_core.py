@@ -67,10 +67,42 @@ def test_pasted_ads_are_split_on_dashes():
 
 
 def test_api_request_shape():
-    headers, body = llm.build_request(LIVE, "system", "user", finnish.SCHEMA, 100)
+    url, headers, body = llm.build_request(LIVE, "system", "user", finnish.SCHEMA, 100)
+    assert url == llm.ANTHROPIC_URL
     assert headers["anthropic-version"] == "2026-10-21"
     assert body["output_config"]["format"]["type"] == "json_schema"
-    assert "temperature" not in body           # rejected by the API version used
+    assert "temperature" not in body           # rejected by the current models
+
+
+def test_openrouter_is_used_when_its_key_is_set():
+    settings = llm.settings_from_env({"OPENROUTER_API_KEY": "sk-or-test", "LLM_MODEL": "claude-haiku-5-5"})
+    assert (settings.provider, settings.live) == ("openrouter", True)
+    url, headers, body = llm.build_request(settings, "system", "user", finnish.SCHEMA, 100)
+    assert url == llm.OPENROUTER_URL
+    assert headers["authorization"] == "Bearer sk-or-test"
+    assert body["model"] == "anthropic/claude-haiku-5.5"
+    assert body["messages"][0] == {"role": "system", "content": "system"}
+    assert body["response_format"]["json_schema"]["schema"] == finnish.SCHEMA
+    assert body["provider"] == {"require_parameters": True, "data_collection": "deny"}
+    assert "sk-or-test" not in repr(settings)
+
+
+def test_openrouter_model_names():
+    assert llm.openrouter_model("claude-opus-5-5") == "anthropic/claude-opus-5.5"
+    assert llm.openrouter_model("claude-opus-5") == "anthropic/claude-opus-5"
+    assert llm.openrouter_model("anthropic/claude-sonnet-5.5") == "anthropic/claude-sonnet-5.5"
+
+
+def test_openrouter_reply_is_read_and_cut_off_answers_are_errors():
+    import pytest
+    settings = llm.Settings(provider="openrouter", api_key="sk-or-test")
+    reply = {"model": "anthropic/claude-haiku-5.5",
+             "choices": [{"finish_reason": "stop", "message": {"content": '{"level": "unclear"}'}}]}
+    post = lambda url, headers, data, timeout: (200, {}, json.dumps(reply).encode())
+    assert llm.call_json("s", "u", finnish.SCHEMA, settings, post=post)["data"] == {"level": "unclear"}
+    reply["choices"][0]["finish_reason"] = "length"
+    with pytest.raises(llm.LLMError):
+        llm.call_json("s", "u", finnish.SCHEMA, settings, post=post)
 
 
 def test_dataset_quotes_are_exact_and_sources_are_marked():

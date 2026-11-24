@@ -67,6 +67,7 @@
 </ul>
 
 <h2>Privacy</h2>
-<p>Nothing is stored. Without an API key nothing leaves the server. With a key, the ad text is sent to the
-  Claude API (Anthropic) to be classified; skills are only used on the server, for ranking.</p>
+<p>Nothing is stored. Without an API key nothing leaves the server. With a key, the ad text is sent to Claude, either directly
+  (Anthropic's API) or through OpenRouter, which forwards it to Claude; with OpenRouter, only providers that don't
+  store or train on the data are allowed. Skills are only used on the server, for ranking.</p>
 {% endblock %}
