@@ -1,0 +1,27 @@
+{
+  "date": "2026-11-24",
+  "mode": "mock",
+  "ads": 38,
+  "real_ads": 30,
+  "excluded_unclear": 11,
+  "baseline_collapsed": {
+    "accuracy": 0.5925925925925926,
+    "correct": 16,
+    "total": 27
+  },
+  "baseline_collapsed_real": {
+    "accuracy": 0.47368421052631576,
+    "correct": 9,
+    "total": 19
+  },
+  "classifier_collapsed": {
+    "accuracy": 0.7777777777777778,
+    "correct": 21,
+    "total": 27
+  },
+  "four_levels": {
+    "accuracy": 0.7631578947368421,
+    "correct": 29,
+    "total": 38
+  }
+}

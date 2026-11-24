@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% set labels = {"required": "Finnish required", "preferred": "Finnish an advantage",
+                 "not_needed": "Finnish not needed", "unclear": "Unclear"} %}
+{% block title %}Results – Finnish requirement checker{% endblock %}
+{% block content %}
+<h1>Your shortlist</h1>
+<p class="lead">{{ rows|length }} ads, sorted so the ones you can realistically apply to come first
+  {%- if level == "fluent" %} (you said your Finnish is fluent, so the Finnish level doesn't change the order){% endif %}.
+  Skills: {{ skills|join(", ") if skills else "none given" }}.</p>
+
+{% if errors %}
+<div class="errors" role="alert"><p><strong>Some input was skipped:</strong></p>
+  <ul>{% for e in errors %}<li>{{ e.item }}: {{ e.message }}</li>{% endfor %}</ul></div>
+{% endif %}
+
+<p class="row"><label class="check"><input type="checkbox" id="hide-required"> Hide “Finnish required” ads</label>
+  <a href="{{ url_for('index') }}">Check other ads</a></p>
+
+<div class="scroll">
+<table id="results">
+  <thead><tr><th>Rank</th><th>Ad</th><th>Finnish</th><th>Evidence from the ad</th><th>Skill matches</th></tr></thead>
+  <tbody>
+  {% for row in rows %}
+  {% set f = row.finnish %}
+  <tr data-level="{{ f.level }}">
+    <td class="rank">{{ loop.index }}</td>
+    <td>{% if row.url %}<a href="{{ row.url }}" target="_blank" rel="noopener">{{ row.title }}</a>{% else %}{{ row.title }}{% endif %}</td>
+    <td><span class="badge {{ f.level }}">{{ labels[f.level] }}</span>
+      {% if f.method == "mock" %}<div class="hint">MOCK</div>{% endif %}</td>
+    <td>{% if f.evidence %}<q>{{ f.evidence[0] }}</q>{% endif %}
+      <div class="explanation">{{ f.explanation_en }}</div>
+      {% if f.rejected_evidence %}<div class="hint">A quote that isn't in the ad was rejected.</div>{% endif %}</td>
+    <td>{% if row.matched_skills %}{{ row.matched_skills|join(", ") }}{% else %}–{% endif %}
+      <div class="hint">{{ row.skill_score }}% of your skills</div></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="hint">Order: Finnish not needed, then an advantage, then unclear, then required; within each group, ads that
+  match more of your skills come first. Always read the ad itself before applying.</p>
+{% endblock %}

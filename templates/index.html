@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Which internship ads can you apply to without Finnish?</h1>
+<p class="lead">Paste up to {{ max_ads }} job or internship ads. For each one you get what it says about Finnish
+  (required, an advantage, not needed or unclear), the exact sentence it is based on, and a ranked shortlist.</p>
+
+{% if errors %}
+<div class="errors" role="alert">
+  <p><strong>Please check your input:</strong></p>
+  <ul>{% for e in errors %}<li>{{ e.item }}: {{ e.message }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('analyze') }}" enctype="multipart/form-data" class="card">
+  <label for="ads_text">Ads <span class="hint">(separate ads with a line containing only <code>---</code>)</span></label>
+  <textarea id="ads_text" name="ads_text" rows="14" placeholder="Summer trainee, data analysis&#10;We expect good SQL skills. Finnish is an advantage.&#10;---&#10;Next ad…">{{ form.ads_text if form else "" }}</textarea>
+  <p class="row"><button type="button" class="secondary" id="load-samples">Load sample ads</button>
+    <span class="hint" id="samples-status" role="status"></span></p>
+
+  <label for="csv_file">…or upload a CSV <span class="hint">(column <code>ad_text</code>; <code>title</code> and <code>url</code> optional)</span></label>
+  <input type="file" id="csv_file" name="csv_file" accept=".csv,text/csv">
+
+  <label for="skills">Your skills <span class="hint">(separated by commas)</span></label>
+  <textarea id="skills" name="skills" rows="2" placeholder="Python, SQL, Excel, QGIS, customer service">{{ form.skills if form else "" }}</textarea>
+
+  <label for="finnish_level">Your Finnish</label>
+  <select id="finnish_level" name="finnish_level">
+    {% for level in levels %}
+    <option value="{{ level }}" {% if form and form.finnish_level == level %}selected{% endif %}>{{ level|capitalize }}</option>
+    {% endfor %}
+  </select>
+  <p class="hint">If you choose Fluent, ads that require Finnish are not moved to the end.</p>
+
+  <button type="submit">Check the ads</button>
+</form>
+{% endblock %}

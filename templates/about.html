@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}About – Finnish requirement checker{% endblock %}
+{% macro pct(value) %}{{ "–" if value is none else "%.0f%%"|format(100 * value) }}{% endmacro %}
+{% block content %}
+<h1>About this tool</h1>
+
+<h2>The problem</h2>
+<p>In Metropolia's internationalisation survey (954 student respondents, results published 6 May 2026), international
+  students said their number one concern is employment. They worry about the labour market and about whether their
+  Finnish is good enough, and they asked for more support with job seeking
+  (<a href="https://www.metropolia.fi/en/about-us/news/metropolias-international-students-are-satisfied-with-teaching-and-support-and-wish-to-stay-and-work-in-finland">Metropolia news, 6.5.2026</a>).
+  Every degree includes a practical training period, so every student has to find a placement.</p>
+<p>Many internship ads mention Finnish, but it isn't always clear whether it is <em>required</em> or only
+  <em>an advantage</em>. Students translate ads one by one, or skip Finnish ads entirely and miss ones they could apply to.</p>
+
+<h2>How it works</h2>
+<ol>
+  <li>The ads are split (a line of <code>---</code>, or one CSV row each) and checked against the limits.</li>
+  <li>Each ad is sent to a language model with a short, fixed instruction (in <code>core/prompts/finnish_level.md</code>).
+    It must answer in a fixed JSON shape: a level, the exact sentence(s) from the ad, and one sentence in English.</li>
+  <li>The code checks every quoted sentence really appears in the ad. If one doesn't, the answer becomes “unclear”.</li>
+  <li>The ads are ranked: Finnish not needed, an advantage, unclear, required; within each group by how many of
+    the student's skills the ad mentions (Finnish case endings are handled).</li>
+</ol>
+
+<h2>Evaluation</h2>
+{% if summary %}
+<p>On {{ summary.ads }} hand-labelled ads ({{ summary.real_ads }} real excerpts from Valtiolle and Kuntarekry, the rest
+  invented to cover rare cases), {{ summary.excluded_unclear }} labelled “unclear” left out of the yes/no comparison:</p>
+<table>
+  <thead><tr><th>Question: is Finnish required?</th><th>Accuracy</th></tr></thead>
+  <tbody>
+    <tr><td>Keyword rule (my earlier tool, JobDesk), real ads</td>
+      <td>{{ pct(summary.baseline_collapsed_real.accuracy) }} ({{ summary.baseline_collapsed_real.correct }} of {{ summary.baseline_collapsed_real.total }})</td></tr>
+    <tr><td>Keyword rule, all ads</td>
+      <td>{{ pct(summary.baseline_collapsed.accuracy) }} ({{ summary.baseline_collapsed.correct }} of {{ summary.baseline_collapsed.total }})</td></tr>
+    {% if summary.mode == "live" %}
+    <tr><td>LLM classifier</td>
+      <td>{{ pct(summary.classifier_collapsed.accuracy) }} ({{ summary.classifier_collapsed.correct }} of {{ summary.classifier_collapsed.total }})</td></tr>
+    {% else %}
+    <tr><td>LLM classifier</td><td>not run yet</td></tr>
+    {% endif %}
+  </tbody>
+</table>
+<p>On real ads the keyword rule found only {{ summary.baseline_collapsed_real.correct }} of
+  {{ summary.baseline_collapsed_real.total }} correctly; most misses were ads that <em>do</em> require Finnish, so a
+  student relying on it would apply to jobs they can't get.</p>
+{% if summary.mode != "live" %}
+<p class="hint">The LLM evaluation needs an API key and hasn't been run yet. The mock mode's keyword guess is not
+  reported: it was written after seeing these ads, so its score would not be a fair result.</p>
+{% endif %}
+<p>Typical keyword-rule failures, from real ads: “Suomen kielen taitosi on erinomainen” (word order) and
+  “sujuvaa kirjallista suomen kielen taitoa” (an extra word) were both missed, and in JobDesk
+  “hyvä suomen kielen taito on eduksi” (an advantage) was flagged as required.
+  Full results: <code>eval/REPORT.md</code>.</p>
+{% else %}
+<p>Run <code>python -m core.evaluate</code> to produce the evaluation.</p>
+{% endif %}
+
+<h2>Limitations</h2>
+<ul>
+  <li>The labelled set is small and most real ads are public-sector ads that require Finnish; “an advantage” and
+    “not needed” cases are mostly invented examples.</li>
+  <li>The quote check proves the sentence is in the ad, not that the level is right: a real sentence can still be
+    misread. Always read the ad before applying.</li>
+  <li>Skill matching is word matching: “data analysis” won't match “analysing data” in every form.</li>
+</ul>
+
+<h2>Privacy</h2>
+<p>Nothing is stored. Without an API key nothing leaves the server. With a key, the ad text is sent to the
+  Claude API (Anthropic) to be classified; skills are only used on the server, for ranking.</p>
+{% endblock %}
