@@ -133,12 +133,15 @@ def main():
     rows = load_dataset(ROOT / "data" / "eval" / "ads.jsonl")
     baseline = {r["id"]: finnish.baseline_v1(r["ad_text_excerpt"]) for r in rows}
     results = {}
-    for r in rows:
+    for number, r in enumerate(rows, start=1):
+        print(f"[{number}/{len(rows)}] {r['id']}", file=sys.stderr)
         try:
             results[r["id"]] = finnish.classify(r["ad_text_excerpt"], settings)
         except llm.LLMError as error:
-            print(f"{r['id']}: {error} (counted as unclear)", file=sys.stderr)
-            results[r["id"]] = finnish.result("unclear", [], str(error), "error")
+            # Stop at the first failure and write nothing: a report full of failed calls (for example with a
+            # wrong API key) would look like real results and overwrite the good one.
+            print(f"Stopped: {r['id']}: {error} No report was written.", file=sys.stderr)
+            sys.exit(1)
     mode = "live" if settings.live else "mock"
     summary = evaluate(rows, baseline, {i: res["level"] for i, res in results.items()})
     out = ROOT / "eval"

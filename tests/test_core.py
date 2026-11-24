@@ -81,3 +81,19 @@ def test_dataset_quotes_are_exact_and_sources_are_marked():
         if r["evidence"]:
             assert finnish.squash(r["evidence"]) in finnish.squash(r["ad_text_excerpt"]), r["id"]
         assert bool(r.get("invented")) == (r["source_url"] == ""), r["id"]
+
+
+def test_evaluation_writes_nothing_when_an_api_call_fails(monkeypatch, tmp_path):
+    import pytest
+    from core import evaluate
+
+    def failing(text, settings, call=None):
+        raise llm.LLMError("Claude API call failed: HTTP 401 authentication_error.")
+    monkeypatch.setattr(evaluate, "ROOT", tmp_path)
+    (tmp_path / "data" / "eval").mkdir(parents=True)
+    (tmp_path / "data" / "eval" / "ads.jsonl").write_text(
+        (ROOT / "data" / "eval" / "ads.jsonl").read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(evaluate.finnish, "classify", failing)
+    with pytest.raises(SystemExit):
+        evaluate.main()
+    assert not (tmp_path / "eval").exists()
