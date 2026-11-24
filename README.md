@@ -109,8 +109,10 @@ Python 3.11 or newer.
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-flask --app app run              # http://127.0.0.1:5000
+flask --app app run --port 5050  # http://localhost:5050
 ```
+
+Port 5050, because on macOS port 5000 belongs to AirPlay Receiver (the browser shows "403 access denied").
 
 - **Without an API key** the app runs in **mock mode**: a simple keyword guess, labelled "MOCK" everywhere, so you can
   try the app immediately. Click **Load sample ads**, then **Check the ads**.
